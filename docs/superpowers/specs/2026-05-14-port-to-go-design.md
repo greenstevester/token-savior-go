@@ -303,6 +303,91 @@ Compat harness covers end-to-end. Inside each Go package, idiomatic `testify` ta
 
 Equivalent of `tests/conftest.py`: a `TestMain` in each integration test package sets `TOKEN_SAVIOR_STATS_DIR` to a tempdir and `TOKEN_SAVIOR_WATCHER=off`. The watchfiles SIGSEGV that drove the Python workaround doesn't exist for fsnotify, so the watcher can default to `auto` in unit tests.
 
+## Evaluation
+
+The compat harness answers "does Go match Python on tool outputs?" — necessary but not sufficient. This section adds the evals that answer "is Go *good*, is it fast enough, will v4 actually help users?"
+
+### Baselines
+
+Captured once at start of M1 against Python v3 on the fixture set. Every later regression is measured against this fixed reference. Checked into `testdata/baselines/python-v3-2026-05-14.json`. Never regenerated unless the fixture set changes.
+
+Captured metrics:
+
+- **Cold-index latency** — `token-savior` start to indexer-ready log line, per fixture size.
+- **Query latency** — median + p95 wall time per tool, on a scripted workload of ~200 calls.
+- **Memory footprint** — RSS at steady state after the workload.
+- **Manifest size** — bytes per `TOKEN_SAVIOR_PROFILE`, derived once.
+
+### Fixture set
+
+Public OSS projects at known commit SHAs (recorded in `testdata/fixtures.lock.json`). Reproducible. Sized to span the realistic range:
+
+| Language | Small (~1k files) | Medium (~10k) | Large (~50k+) |
+|---|---|---|---|
+| Java | `spring-projects/spring-petclinic` | `spring-projects/spring-boot` | `apache/cassandra` |
+| TypeScript | `vercel/next-learn` | `vercel/next.js` | `microsoft/vscode` |
+| Go | `gohugoio/hugo` | `kubernetes/minikube` | `kubernetes/kubernetes` |
+| Rust | `BurntSushi/ripgrep` | `tokio-rs/tokio` | `rust-lang/rust` |
+| Shell | `ohmyzsh/ohmyzsh` | n/a | n/a |
+
+### Eval matrix
+
+| # | Eval | Method | Target | Gates |
+|---|---|---|---|---|
+| E1 | Tool-by-tool parity | Compat harness; strict equality on stateless tools, shape compare on stateful | 100% on stateless; ≥95% on stateful | Every M |
+| E2 | Cold-index latency | Time stdio-ready on each fixture | Go ≤ Python +10% by M2; ≤ Python by M5 | M2, M5 |
+| E3 | Query latency | Scripted 200-call workload per fixture, median + p95 | Go ≤ Python at every milestone | Every M |
+| E4 | Memory footprint | RSS sampled during E3 workload | Go ≤ 0.7× Python; aspirational ≤ 0.5× | M5 |
+| E5 | Per-language structural fidelity | Diff Python vs Go symbol output on each fixture; count missed + spurious | ≥95% recall, ≥98% precision per language | M2 |
+| E6 | Memory-search quality | 50 curated (query → expected obs ids) pairs from real session data; recall@10 | ≥80% recall@10 vs Python's vector-augmented baseline. **<60% is stop-ship.** | M4 |
+| E7 | Watcher correctness | Mutate fixture (rename/move/touch); measure time-to-refresh and accuracy | ≤200ms event-to-refresh, zero missed events | M3 |
+| E8 | End-to-end agent benchmark | New `gobench` — 30 tasks across Java/TS/Go/shell/Rust, paired Plain Claude vs Go-v4 Claude | Go ≥ Plain Claude; aspirational ≥ Python v3 on overlapping tasks | M6 |
+| E9 | Scale eval | Cold-index + 20 queries on Large fixtures | Cold-index <60s on Large; no OOM at 8 GB | M5 |
+| E10 | Dogfood | Run Go v4 against ≥3 of owner's own projects for ≥2 weeks | Zero P1 issues; <5 open P2 at cutover | M6 |
+
+### The agent benchmark (E8) — biggest new piece
+
+tsbench can't be reused (Python/Prisma fixtures). The replacement (`gobench` working title):
+
+- **30 tasks**, 5 categories × 6 tasks: navigate, edit, audit, refactor, code-gen, bug-fix.
+- Fixtures drawn from the Large tier (Cassandra, VS Code, Kubernetes, rust-lang/rust, oh-my-zsh).
+- Same harness shape as tsbench: paired runs, automated graders.
+- **Budget: 1–2 weeks of work, scheduled inside M6.** If `gobench` slips, M6 slips — the eval can't be skipped, it's the only quality signal for the agent layer.
+
+### Per-milestone exit gates
+
+Replaces "milestones are done when the harness is green":
+
+| Milestone | Exit gate |
+|---|---|
+| M1 | E1 (M1 tools) + E3 baseline captured + manifest size shows Go ≤ Python |
+| M2 | E1 (M1+M2 tools) + E2 (cold-index) + E5 (per-language fidelity) at target |
+| M3 | E1 (M1–M3 tools) + E7 (watcher correctness) |
+| M4 | E1 (memory tools) + E6 (memory recall) ≥80% — **stop-ship below 60%** |
+| M5 | E1 (all tools) + E2 + E3 + E4 + E9 (scale) all green |
+| M6 | E8 (gobench) ≥ Plain Claude + E10 (2-week dogfood) + golden fixtures frozen — **then cut v4.0** |
+
+Compat harness is necessary for E1 but no longer sufficient on its own.
+
+### Failure protocol
+
+- **E1 fails** → fix, or document in `internal/compat/expected_diffs.go` with rationale.
+- **E2/E3/E4 regress** → profile, fix, or accept with documented known limitation.
+- **E5 below target** → improve tokenizer or shrink the language matrix further; don't ship the milestone.
+- **E6 between 60–80%** → tune ranking weights, retry. **Below 60%** → reconsider BM25-only choice; this is the only eval that can force a scope reversal.
+- **E7 fails** → fix; watcher is on-path for every milestone after M3.
+- **E8 below Plain Claude** → **don't ship v4.0.** The whole point of token-savior is that it helps; if v4 doesn't, the cutover doesn't happen.
+- **E9 fails on Large** → ship with a documented project-size cap; file follow-up.
+- **E10 surfaces P1s** → block cutover until resolved.
+
+### Telemetry channels (post-launch)
+
+Added so quality is measurable in the wild, not just at milestone gates:
+
+- `stats.Counters` gains `ts_search_misses`, `memory_search_empty_results`, `query_latency_ms_p95`, `cold_index_ms`.
+- Stats file (`~/.local/share/token-savior/stats.json`) is the read-out channel.
+- No external telemetry beacon. User-private, file-only.
+
 ## Build, CI, distribution
 
 Mirror `bayvets/thepetpanicbutton-triage-server` directly.
@@ -385,9 +470,9 @@ Each milestone produces a working `token-savior` binary that passes the compat h
 | **M5** | Opt engines + remaining tools | PPM, TCA, Leiden, LinUCB, warm-start. Plus `find_dead_code`, `find_hotspots`, `find_semantic_duplicates`, `detect_breaking_changes`, `analyze_config`, `find_impacted_test_files`, `get_routes`. | 3 wk |
 | **M6** | Cutover | Delete Python source + tests. Freeze `testdata/golden/`. Shrink compat harness to golden-file checker. Cut v4.0.0 release via goreleaser. Update README, CHANGELOG, llms-install.md. | 1–2 wk |
 
-**Total budget: 17–22 weeks (~4–5 months).**
+**Total budget: 17–22 weeks (~4–5 months).** M6's budget includes the `gobench` end-to-end eval (1–2 weeks of new work; see Evaluation > E8).
 
-The compat harness exists from M1 onward and is the merge gate at every milestone.
+The compat harness exists from M1 onward and is the merge gate at every milestone. **Per-milestone exit gates** are defined in the Evaluation section — harness-green is necessary but not sufficient.
 
 **Plan scope:** the first `writing-plans` pass should produce an implementation plan for **M1 only**. M2–M6 each get their own implementation plan, opened at the start of that milestone — this keeps each plan small enough to execute without re-planning mid-stream and lets discoveries in earlier milestones reshape later ones.
 
