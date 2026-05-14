@@ -1,75 +1,156 @@
-# Token Savior — recommended config for Claude Code
+# CLAUDE.md
 
-This file is auto-discovered by Claude Code. It tells the agent how to use
-Token Savior efficiently. Drop this CLAUDE.md (or its contents) at the root
-of your own project to reproduce the 100% / −77% active-tokens result on
-[tsbench](https://github.com/Mibayy/tsbench).
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Defaults the bench uses
+## Orientation
 
-```bash
-TS_PROFILE=tiny_plus            # 15 tools, ~2.5 KT manifest
-TS_CAPTURE_DISABLED=1           # skip read-side capture sandboxing
-```
+- The directory is named `token-savior-go` but the project is **Python** — package
+  `token_savior` (PyPI: `token-savior-recall`). There is no Go code here; the suffix
+  is historical.
+- This is an MCP server. The wire entry point is `token-savior` (console script in
+  `pyproject.toml` → `token_savior.server:main_sync`).
+- The optional web viewer entry point is `token-savior-dashboard`.
 
-`tiny_plus` is the Pareto-optimal profile. It exposes exactly the 15 tools
-agents reach for after the first turn — locate, read, edit, audit, graph,
-git, and config — and hides the rest behind `ts_search` (Nomic embeddings
-on tool descriptions). Manifest math: tiny_plus ~2.5 KT vs lean ~7 KT vs
-full ~10 KT.
-
-## Tool routing (use these, not natives)
-
-| Goal | Tool | Replaces |
-|---|---|---|
-| Locate a symbol | `find_symbol(name)` | `grep -rn` |
-| Read a function / class | `get_function_source(name)` / `get_class_source(name)` | `cat` + scroll |
-| One-shot context (loc + source + callers + deps) | `get_full_context(name)` | the whole chain |
-| Search across project | `search_codebase(pattern)` | `grep` / `rg` |
-| Discover any other tool | `ts_search(query)` | reading docs |
-| Edit code (`.py`/`.ts`/`.tsx`/`.js`/`.jsx`) | `replace_symbol_source` / `insert_near_symbol` | `Edit` / `Write` |
-| Add a model field (`.prisma`/`.py`/`.ts`) | `add_field_to_model` | hand edits |
-| Move a symbol with import fixup | `move_symbol(name, target_file)` | copy-paste |
-| Detect import cycles | `find_import_cycles` | manual reasoning |
-| Detect duplicates | `find_semantic_duplicates(max_groups=30)` | manual review |
-| Diff between refs | `detect_breaking_changes(ref="v1")` | `git diff` reading |
-| Find dead code | `find_dead_code` | manual hunting |
-| Audit config (orphans / secrets) | `analyze_config(checks=["orphans"])` | manual checks |
-| Git status (structured) | `get_git_status` | `git status` parsing |
-
-`Edit` / `Write` / `Read` / `Grep` stay allowed for `.env`, `.yml`, `.json`
-config and `.md` docs. They are **forbidden on source code** in the
-benchmark — the model that uses them on `.py`/`.ts` files loses points.
-
-## Hard rules from the v2 system prompt
-
-These rules earn the last 4 points (192/192 vs 188/192) on Opus tiny+v2:
-
-- **Never spawn `Agent`** (sub-agent delegation). It runs without MCP
-  context, can't see the project, and abandons the task. The harness
-  also bans it via `--disallowedTools Agent`.
-- **Code-generation tasks**: the response must contain (1) `import`
-  statements at the top of the code block and (2) the explicit target
-  file path (e.g. a `### packages/utils/foo.py` heading). The grader
-  searches for both.
-- **Rename tasks**: `replace_symbol_source` on the function definition
-  + `search_codebase` for callers in the same module. Never touch
-  same-named symbols in other modules.
-- **Add-field tasks** (`.prisma` + `.ts`/`.py`): one `add_field_to_model`
-  call per file. Don't insert by hand on `.prisma`.
-- **Citations**: every symbol mentioned needs a `file::symbol` path.
-  Never abbreviate to "...and N more".
-
-## Reproduce the bench
+## Common commands
 
 ```bash
-git clone https://github.com/Mibayy/tsbench && cd tsbench
-python3 generate.py --seed 42
-git tag v1
-python3 breaking_changes.py
-git tag v2
-TS_PROFILE=tiny_plus TS_CAPTURE_DISABLED=1 python3 bench.py --tasks all --run B
+# Install (editable, with MCP + dev tools)
+pip install -e ".[mcp,dev]"
+
+# Lint (matches CI exactly — see .github/workflows/ci.yml)
+ruff check src/ tests/
+
+# Full test suite
+pytest tests/ -q
+
+# Single file / single test
+pytest tests/test_server.py -q
+pytest tests/test_server.py::test_specific_thing -q
+
+# Run the MCP server locally against a project
+WORKSPACE_ROOTS=/abs/path/to/project token-savior
+
+# Run benchmarks
+pip install -e ".[benchmark]"
+token-savior-bench
 ```
 
-Score: 192 / 192 (100%) on Claude Opus 4.7 — wall 26.6 s/task, active
-3 929 tokens/task. See [BENCHMARK-SUMMARY.md](https://github.com/Mibayy/tsbench/blob/main/BENCHMARK-SUMMARY.md).
+CI runs on Python 3.11 / 3.12 / 3.13. `mypy strict` is configured but not yet wired
+into CI — don't be surprised if it flags more than `ruff` does.
+
+## Architecture — the parts you can't infer by browsing
+
+### Handler dispatch — 4 call-shape buckets
+
+`src/token_savior/server_handlers/__init__.py` aggregates per-domain handler dicts
+into four buckets, asserted disjoint at import time:
+
+| Bucket            | Signature                                       | Lives in                              |
+|-------------------|-------------------------------------------------|---------------------------------------|
+| `META_HANDLERS`   | `handler(arguments) -> list[TextContent]`       | stats, project lifecycle, memory admin |
+| `MEMORY_HANDLERS` | `handler(arguments) -> str`                     | memory engine (return wrapped by caller) |
+| `SLOT_HANDLERS`   | `handler(slot, arguments) -> raw`               | anything needing a project slot       |
+| `QFN_HANDLERS`    | `handler(query_fns, arguments) -> raw`          | structural code-navigation queries    |
+
+Adding a tool means: (1) write the handler in the appropriate `server_handlers/*.py`,
+(2) add its schema to `tool_schemas.py`, (3) add it to the relevant `HANDLERS`
+dict. The disjoint check fails the import if a name appears in two buckets — *don't
+silence it*, rename the tool. `tool_schemas.py` is the single source of truth for
+the advertised manifest.
+
+### Slot manager — multi-project workspace
+
+`slot_manager.SlotManager` owns one `_ProjectSlot` per workspace root. Each slot
+holds its own `ProjectIndexer`, `query_fns`, `CacheManager`, optional `SlotWatcher`,
+and a `cache_gen` counter bumped on every index mutation. SLOT_HANDLERS receive the
+active slot; META/MEMORY handlers don't. `switch_project` is the idempotent way to
+change the active slot. `WORKSPACE_ROOTS` (comma-separated abs paths) drives this;
+the legacy `PROJECT_ROOT` single-root mode still works.
+
+### Annotator dispatch — one per language
+
+`annotator.py` maps file extensions to per-language annotators
+(`python_annotator.py`, `typescript_annotator.py`, `go_annotator.py`, ~25 total).
+Each annotator returns a `StructuralMetadata` and conforms to `AnnotatorProtocol`
+(`models.py`). When adding language support: write `<lang>_annotator.py`, register
+in `annotator._EXTENSION_MAP`, add `tests/test_markup_<lang>.py` following the
+existing pattern. The annotator-protocol contract test
+(`tests/test_annotator_protocol.py`) keeps everyone honest.
+
+### Memory engine — its own subpackage
+
+`token_savior/memory/` is a self-contained sub-system: SQLite (WAL + FTS5 +
+optional `sqlite-vec`), Bayesian validity, decay/TTL, ROI tracking, MDL
+distillation, hybrid BM25+vector search via RRF, optional web viewer. Schema in
+`memory_schema.sql`. The progressive-disclosure contract
+(`memory_index` → `memory_search` → `memory_get`) is documented in
+`docs/progressive-disclosure.md` — keep all three layers consistent if you touch
+any of them. Vector search is opt-in via `pip install ".[memory-vector]"`; tests
+gracefully skip when `sqlite-vec`/`fastembed` are absent.
+
+### server_state.py — module-level globals
+
+Single source of truth for mutable session state, including the slot manager and
+five optimization engines instantiated at import (`PPMPrefetcher`, `TCAEngine`,
+`LeidenCommunities`, `LinUCBInjector`, `SessionWarmStart`). Handlers read/write
+via `server_state.<name>` so changes propagate across split modules. Don't
+re-declare globals in handler modules.
+
+### Profile filtering
+
+`TOKEN_SAVIOR_PROFILE` (env var) trims the *advertised* `tools/list` payload —
+handlers stay registered, so a hidden tool still executes if invoked by name.
+Valid values: `full` (default), `core`, `nav`, `lean`, `ultra`, `tiny`,
+`tiny_plus`. Filter sets live in `server.py` as `_PROFILE_EXCLUDES`. The README
+profile table is the source of truth for token-cost math.
+
+> Note: the previous CLAUDE.md used `TS_PROFILE` — that variable name is **not**
+> read anywhere in the code. Always use `TOKEN_SAVIOR_PROFILE`.
+
+### Useful env vars (all real, grep `os.environ` in `server.py` / `server_state.py`)
+
+- `WORKSPACE_ROOTS` — comma-separated project roots (canonical)
+- `PROJECT_ROOT` — single-root legacy mode
+- `TOKEN_SAVIOR_PROFILE` — manifest trimming (see above)
+- `TS_MEMORY_DISABLE=1` — hide `memory_*` tools from manifest
+- `TS_CAPTURE_DISABLED=1` — hide `capture_*` tools, skip read-side sandbox
+- `TS_HOOK_MINIMAL=1` — minimal SessionStart hook
+- `TS_NO_HINTS=1` — drop `_hints` / `_suggestion` from tool returns
+- `TOKEN_SAVIOR_WATCHER=on|auto|off` — file watcher mode (tests default `off` — see `tests/conftest.py`)
+- `TOKEN_SAVIOR_STATS_DIR` — relocate persistent stats (tests isolate to a temp dir)
+- `TOKEN_SAVIOR_MEMORY_AUTO_SAVE=1` — enable auto-save tracking
+- `TS_VIEWER_PORT` — boot the memory web viewer
+- `TS_AUTO_EXTRACT=1` + `TS_API_KEY` — opt-in LLM auto-extraction from tool uses
+
+### Test isolation
+
+`tests/conftest.py` sets `TOKEN_SAVIOR_STATS_DIR` to a fresh tempdir *before*
+collection (module-level side effect on import — not a fixture), and pins
+`TOKEN_SAVIOR_WATCHER=off`. Reason: the `watchfiles` Rust extension's destructor
+has segfaulted at interpreter shutdown on CI runners. Keep the import lazy; tests
+that need the watcher set `auto` + `TS_WATCHER_FORCE_POLLING` in their own
+autouse fixtures (see `tests/test_watcher.py`).
+
+## Conventions
+
+- New language support: annotator + `_EXTENSION_MAP` entry + `tests/test_markup_*.py`. The protocol contract test catches missing methods automatically.
+- New MCP tool: schema in `tool_schemas.py` + handler in correct `server_handlers/` module + entry in the matching `HANDLERS` dict. If you add to the wrong bucket the disjoint assertion fires at import.
+- Index-mutating edits: prefer `edit_ops` paths that bump `slot.cache_gen` — bypassing them stales the session result cache (`_session_result_cache`).
+- Don't touch the four MCP dispatch tables from outside `server_handlers/`. The shape (`META` / `MEMORY` / `SLOT` / `QFN`) is load-bearing for `call_tool`.
+
+## When Claude Code is working *on this repo*
+
+Token Savior can index its own source. The tool-routing recipe that the prior
+CLAUDE.md documented for downstream consumers still applies here:
+
+| Goal | Tool |
+|---|---|
+| Locate a symbol | `find_symbol(name)` |
+| Read a function / class | `get_function_source(name)` / `get_class_source(name)` |
+| Orient on a symbol (loc + source + callers + deps) | `get_full_context(name)` |
+| Edit Python | `replace_symbol_source` / `insert_near_symbol` (keeps index in sync) |
+| Discover other TS tools | `ts_search(query)` |
+
+Native `Edit` / `Write` are fine for `.md`, `.toml`, `.yaml`, `.json`,
+`memory_schema.sql`, and CI configs. Prefer the structural editors for `.py`
+because they update the index and avoid a full re-annotation.
