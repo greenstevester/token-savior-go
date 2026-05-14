@@ -1,4 +1,4 @@
-.PHONY: build build-all build-linux clean test test-compat lint help
+.PHONY: build build-token-savior build-ts-compat build-all build-linux clean test test-compat lint help
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
