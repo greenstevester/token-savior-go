@@ -42,13 +42,19 @@ func (a *Annotator) Annotate(path string, source []byte) (*models.StructuralMeta
 		case *ast.FuncDecl:
 			md.Functions = append(md.Functions, funcFromDecl(fset, d))
 		case *ast.GenDecl:
-			if d.Tok != token.TYPE {
-				continue
-			}
-			for _, spec := range d.Specs {
-				if ts, ok := spec.(*ast.TypeSpec); ok {
-					if cls, ok := classFromSpec(fset, ts); ok {
-						md.Classes = append(md.Classes, cls)
+			switch d.Tok {
+			case token.TYPE:
+				for _, spec := range d.Specs {
+					if ts, ok := spec.(*ast.TypeSpec); ok {
+						if cls, ok := classFromSpec(fset, ts); ok {
+							md.Classes = append(md.Classes, cls)
+						}
+					}
+				}
+			case token.IMPORT:
+				for _, spec := range d.Specs {
+					if is, ok := spec.(*ast.ImportSpec); ok {
+						md.Imports = append(md.Imports, importFromSpec(fset, is))
 					}
 				}
 			}
@@ -137,6 +143,25 @@ func receiverTypeName(expr ast.Expr) string {
 		}
 	}
 	return ""
+}
+
+// importFromSpec converts an *ast.ImportSpec into a models.Import. The Path
+// is unquoted; Alias is empty unless the import is renamed.
+func importFromSpec(fset *token.FileSet, spec *ast.ImportSpec) models.Import {
+	path := spec.Path.Value
+	// Path is a quoted string literal; strip the quotes.
+	if len(path) >= 2 && path[0] == '"' && path[len(path)-1] == '"' {
+		path = path[1 : len(path)-1]
+	}
+	alias := ""
+	if spec.Name != nil {
+		alias = spec.Name.Name
+	}
+	return models.Import{
+		Path:  path,
+		Alias: alias,
+		Line:  fset.Position(spec.Pos()).Line,
+	}
 }
 
 // renderFuncSignature returns a single-line signature like

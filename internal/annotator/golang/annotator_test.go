@@ -95,3 +95,24 @@ func TestAnnotate_Types(t *testing.T) {
 
 	require.Equal(t, "Thing", md.Classes[byName["Thing"]].Qualified)
 }
+
+func TestAnnotate_Imports(t *testing.T) {
+	src := loadFixture(t, "imports.go.txt")
+	md, err := New().Annotate("imports.go", src)
+	require.NoError(t, err)
+
+	require.Len(t, md.Imports, 4)
+
+	byPath := map[string]models.Import{}
+	for _, im := range md.Imports {
+		byPath[im.Path] = im
+	}
+
+	require.Contains(t, byPath, "context")
+	require.Contains(t, byPath, "fmt")
+	require.Contains(t, byPath, "net/http")
+	require.Contains(t, byPath, "errors")
+
+	require.Equal(t, "myhttp", byPath["net/http"].Alias)
+	require.Equal(t, "", byPath["context"].Alias)
+}

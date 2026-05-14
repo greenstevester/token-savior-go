@@ -1,0 +1,17 @@
+package example
+
+import (
+	"context"
+	"fmt"
+
+	myhttp "net/http"
+)
+
+import "errors"
+
+func use() {
+	_ = context.Background
+	_ = fmt.Println
+	_ = myhttp.StatusOK
+	_ = errors.New
+}
