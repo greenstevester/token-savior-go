@@ -88,8 +88,11 @@ func receiverTypeName(expr ast.Expr) string {
 // "func (t *Thing) Name() string" using go/printer for fidelity.
 func renderFuncSignature(fset *token.FileSet, fn *ast.FuncDecl) string {
 	// Build a synthetic decl with an empty body so we only print the signature.
+	// Clear Doc too — go/printer would otherwise emit the attached doc comment
+	// before the signature, polluting Function.Signature.
 	stub := *fn
 	stub.Body = nil
+	stub.Doc = nil
 
 	var buf bytes.Buffer
 	cfg := printer.Config{Mode: printer.UseSpaces | printer.TabIndent, Tabwidth: 8}

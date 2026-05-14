@@ -2,6 +2,7 @@ package golang
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -41,6 +42,8 @@ func TestAnnotate_Functions(t *testing.T) {
 	require.Contains(t, doThing.Signature, "ctx context.Context")
 	require.Contains(t, doThing.Signature, "n int")
 	require.Contains(t, doThing.Signature, "error")
+	require.False(t, strings.HasPrefix(doThing.Signature, "//"),
+		"signature should not contain leading doc comment: %q", doThing.Signature)
 
 	method := md.Functions[byQualified["Thing.Name"]]
 	require.Equal(t, "Name", method.Name)
