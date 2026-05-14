@@ -15,6 +15,7 @@ func TestLanguageForPath(t *testing.T) {
 		{"foo.ts", "typescript"},
 		{"foo.tsx", "typescript"},
 		{"foo.js", "javascript"},
+		{"foo.jsx", "javascript"},
 		{"foo.java", "java"},
 		{"foo.rs", "rust"},
 		{"foo.sh", "shell"},
