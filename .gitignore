@@ -73,3 +73,9 @@ benchmarks/report.md
 *.tmp
 .token-savior-checkpoints/
 memory-backup-*.json
+
+# Go build artefacts
+bin/
+coverage.out
+*.test
+*.out
