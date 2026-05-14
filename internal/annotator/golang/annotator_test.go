@@ -116,3 +116,24 @@ func TestAnnotate_Imports(t *testing.T) {
 	require.Equal(t, "myhttp", byPath["net/http"].Alias)
 	require.Equal(t, "", byPath["context"].Alias)
 }
+
+func TestAnnotate_Calls(t *testing.T) {
+	src := loadFixture(t, "calls.go.txt")
+	md, err := New().Annotate("calls.go", src)
+	require.NoError(t, err)
+
+	// caller -> {Println, helper, another}; helper -> {Sprintf}
+	got := map[string]map[string]struct{}{}
+	for _, c := range md.Calls {
+		if got[c.From] == nil {
+			got[c.From] = map[string]struct{}{}
+		}
+		got[c.From][c.To] = struct{}{}
+	}
+
+	require.Contains(t, got["caller"], "fmt.Println")
+	require.Contains(t, got["caller"], "helper")
+	require.Contains(t, got["caller"], "another")
+	require.Contains(t, got["helper"], "fmt.Sprintf")
+	require.NotContains(t, got, "another") // empty body -> no entry
+}

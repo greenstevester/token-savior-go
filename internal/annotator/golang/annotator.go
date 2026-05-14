@@ -40,7 +40,9 @@ func (a *Annotator) Annotate(path string, source []byte) (*models.StructuralMeta
 	for _, decl := range file.Decls {
 		switch d := decl.(type) {
 		case *ast.FuncDecl:
-			md.Functions = append(md.Functions, funcFromDecl(fset, d))
+			f := funcFromDecl(fset, d)
+			md.Functions = append(md.Functions, f)
+			walkCalls(fset, d, f.Qualified, &md.Calls)
 		case *ast.GenDecl:
 			switch d.Tok {
 			case token.TYPE:
@@ -162,6 +164,50 @@ func importFromSpec(fset *token.FileSet, spec *ast.ImportSpec) models.Import {
 		Alias: alias,
 		Line:  fset.Position(spec.Pos()).Line,
 	}
+}
+
+// walkCalls populates md.Calls with edges from each function/method body's
+// CallExpr nodes. The To field carries:
+//   - "ident"           for bare calls (helper())
+//   - "pkg.Ident"       for qualified calls (fmt.Println())
+//   - "recv.Method"     for method calls on identifier receivers (t.Do())
+//
+// Method calls on non-identifier receivers (e.g. m().Foo()) are skipped to
+// avoid an avalanche of unresolved edges; the query layer treats To as a
+// best-effort hint.
+func walkCalls(fset *token.FileSet, fn *ast.FuncDecl, from string, out *[]models.SymbolRef) {
+	if fn.Body == nil {
+		return
+	}
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		to := callTargetName(call.Fun)
+		if to == "" {
+			return true
+		}
+		*out = append(*out, models.SymbolRef{
+			From: from,
+			To:   to,
+			Line: fset.Position(call.Pos()).Line,
+		})
+		return true
+	})
+}
+
+// callTargetName extracts a best-effort name for a CallExpr.Fun expression.
+func callTargetName(expr ast.Expr) string {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		return e.Name
+	case *ast.SelectorExpr:
+		if x, ok := e.X.(*ast.Ident); ok {
+			return x.Name + "." + e.Sel.Name
+		}
+	}
+	return ""
 }
 
 // renderFuncSignature returns a single-line signature like

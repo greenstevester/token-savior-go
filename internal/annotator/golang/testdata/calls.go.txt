@@ -1,0 +1,15 @@
+package example
+
+import "fmt"
+
+func caller() {
+	fmt.Println("hi")
+	helper()
+	another()
+}
+
+func helper() {
+	fmt.Sprintf("x")
+}
+
+func another() {}
