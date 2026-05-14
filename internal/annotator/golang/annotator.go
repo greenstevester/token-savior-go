@@ -38,11 +38,43 @@ func (a *Annotator) Annotate(path string, source []byte) (*models.StructuralMeta
 	}
 
 	for _, decl := range file.Decls {
-		if fn, ok := decl.(*ast.FuncDecl); ok {
-			md.Functions = append(md.Functions, funcFromDecl(fset, fn))
+		switch d := decl.(type) {
+		case *ast.FuncDecl:
+			md.Functions = append(md.Functions, funcFromDecl(fset, d))
+		case *ast.GenDecl:
+			if d.Tok != token.TYPE {
+				continue
+			}
+			for _, spec := range d.Specs {
+				if ts, ok := spec.(*ast.TypeSpec); ok {
+					if cls, ok := classFromSpec(fset, ts); ok {
+						md.Classes = append(md.Classes, cls)
+					}
+				}
+			}
 		}
 	}
 	return md, nil
+}
+
+// classFromSpec translates a *ast.TypeSpec into a models.Class. Returns
+// (Class, true) on success and (zero, false) when the spec is not a kind we
+// model (e.g. function-type aliases would still classify as alias).
+func classFromSpec(fset *token.FileSet, spec *ast.TypeSpec) (models.Class, bool) {
+	kind := "alias"
+	switch spec.Type.(type) {
+	case *ast.StructType:
+		kind = "struct"
+	case *ast.InterfaceType:
+		kind = "interface"
+	}
+	return models.Class{
+		Name:      spec.Name.Name,
+		Qualified: spec.Name.Name,
+		Kind:      kind,
+		Line:      fset.Position(spec.Pos()).Line,
+		EndLine:   fset.Position(spec.End()).Line,
+	}, true
 }
 
 // funcFromDecl translates an *ast.FuncDecl into a models.Function.

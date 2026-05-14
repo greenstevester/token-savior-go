@@ -75,3 +75,23 @@ func TestAnnotate_GenericReceivers(t *testing.T) {
 	require.Contains(t, byQualified, "Pair.Key")
 	require.Equal(t, "Pair", byQualified["Pair.Key"].Receiver)
 }
+
+func TestAnnotate_Types(t *testing.T) {
+	src := loadFixture(t, "types.go.txt")
+	md, err := New().Annotate("types.go", src)
+	require.NoError(t, err)
+
+	require.Len(t, md.Classes, 4)
+
+	byName := map[string]int{}
+	for i, c := range md.Classes {
+		byName[c.Name] = i
+	}
+
+	require.Equal(t, "struct", md.Classes[byName["Thing"]].Kind)
+	require.Equal(t, "interface", md.Classes[byName["Greeter"]].Kind)
+	require.Equal(t, "alias", md.Classes[byName["StringList"]].Kind)
+	require.Equal(t, "alias", md.Classes[byName["Counter"]].Kind)
+
+	require.Equal(t, "Thing", md.Classes[byName["Thing"]].Qualified)
+}
