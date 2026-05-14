@@ -8,8 +8,13 @@ import (
 	"go/printer"
 	"go/token"
 
+	"token-savior-go/internal/annotator"
 	"token-savior-go/internal/models"
 )
+
+func init() {
+	annotator.Register("go", New())
+}
 
 // Annotator is the Go-language annotator. Safe for concurrent use.
 type Annotator struct{}
