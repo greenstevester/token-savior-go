@@ -1,0 +1,22 @@
+package example
+
+type Container[T any] struct {
+	val T
+}
+
+func (c *Container[T]) Get() T {
+	return c.val
+}
+
+func (c Container[T]) Set(v T) {
+	c.val = v
+}
+
+type Pair[K comparable, V any] struct {
+	K K
+	V V
+}
+
+func (p *Pair[K, V]) Key() K {
+	return p.K
+}

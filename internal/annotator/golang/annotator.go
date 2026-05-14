@@ -71,12 +71,35 @@ func funcFromDecl(fset *token.FileSet, fn *ast.FuncDecl) models.Function {
 }
 
 // receiverTypeName extracts the bare type name from a method receiver.
-// Handles both `func (t Thing)` and `func (t *Thing)`.
+// Handles six shapes:
+//   - func (t Thing)            -> *ast.Ident
+//   - func (t *Thing)           -> *ast.StarExpr wrapping *ast.Ident
+//   - func (t Thing[T])         -> *ast.IndexExpr
+//   - func (t *Thing[T])        -> *ast.StarExpr wrapping *ast.IndexExpr
+//   - func (t Thing[T, U])      -> *ast.IndexListExpr
+//   - func (t *Thing[T, U])     -> *ast.StarExpr wrapping *ast.IndexListExpr
 func receiverTypeName(expr ast.Expr) string {
 	switch t := expr.(type) {
 	case *ast.Ident:
 		return t.Name
 	case *ast.StarExpr:
+		switch x := t.X.(type) {
+		case *ast.Ident:
+			return x.Name
+		case *ast.IndexExpr:
+			if id, ok := x.X.(*ast.Ident); ok {
+				return id.Name
+			}
+		case *ast.IndexListExpr:
+			if id, ok := x.X.(*ast.Ident); ok {
+				return id.Name
+			}
+		}
+	case *ast.IndexExpr:
+		if id, ok := t.X.(*ast.Ident); ok {
+			return id.Name
+		}
+	case *ast.IndexListExpr:
 		if id, ok := t.X.(*ast.Ident); ok {
 			return id.Name
 		}

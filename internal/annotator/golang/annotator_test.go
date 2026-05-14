@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"token-savior-go/internal/models"
 )
 
 func loadFixture(t *testing.T, name string) []byte {
@@ -48,4 +50,28 @@ func TestAnnotate_Functions(t *testing.T) {
 	method := md.Functions[byQualified["Thing.Name"]]
 	require.Equal(t, "Name", method.Name)
 	require.Equal(t, "Thing", method.Receiver)
+}
+
+func TestAnnotate_GenericReceivers(t *testing.T) {
+	src := loadFixture(t, "generics.go.txt")
+	md, err := New().Annotate("generics.go", src)
+	require.NoError(t, err)
+	require.Len(t, md.Functions, 3)
+
+	byQualified := map[string]models.Function{}
+	for _, f := range md.Functions {
+		byQualified[f.Qualified] = f
+	}
+
+	// Pointer-receiver, single type param.
+	require.Contains(t, byQualified, "Container.Get")
+	require.Equal(t, "Container", byQualified["Container.Get"].Receiver)
+
+	// Value-receiver, single type param.
+	require.Contains(t, byQualified, "Container.Set")
+	require.Equal(t, "Container", byQualified["Container.Set"].Receiver)
+
+	// Pointer-receiver, multi type param.
+	require.Contains(t, byQualified, "Pair.Key")
+	require.Equal(t, "Pair", byQualified["Pair.Key"].Receiver)
 }
