@@ -30,6 +30,5 @@ func NewProjectIndex(root string) *ProjectIndex {
 		DepGraph:    make(map[string]map[string]struct{}),
 		ImportGraph: make(map[string]map[string]struct{}),
 		BasenameMap: make(map[string][]string),
-		SortedPaths: nil,
 	}
 }

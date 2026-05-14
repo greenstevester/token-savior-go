@@ -39,3 +39,23 @@ func TestSymbol_QualifiedName(t *testing.T) {
 	m := Function{Name: "Do", Receiver: "Thing", Qualified: "Thing.Do"}
 	require.Equal(t, "Thing.Do", m.Qualified)
 }
+
+func TestNewProjectIndex_InitialisesAllMaps(t *testing.T) {
+	idx := NewProjectIndex("/tmp/foo")
+
+	require.NotNil(t, idx)
+	require.Equal(t, "/tmp/foo", idx.Root)
+	require.NotNil(t, idx.Files)
+	require.NotNil(t, idx.SymbolTable)
+	require.NotNil(t, idx.DepGraph)
+	require.NotNil(t, idx.ImportGraph)
+	require.NotNil(t, idx.BasenameMap)
+	require.Nil(t, idx.SortedPaths) // lazy-populated, nil is correct
+
+	// Writes to nil maps panic — confirm none of them are nil.
+	idx.Files["a.go"] = &StructuralMetadata{}
+	idx.SymbolTable["X"] = "a.go"
+	idx.DepGraph["X"] = map[string]struct{}{}
+	idx.ImportGraph["a.go"] = map[string]struct{}{}
+	idx.BasenameMap["a.go"] = []string{"a.go"}
+}
