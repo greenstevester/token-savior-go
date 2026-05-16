@@ -3,9 +3,8 @@
 > Companion to `2026-05-14-go-port-m1.md`. Captures progress + carry-forwards as the plan is executed across multiple sessions.
 
 **Branch:** `feat/go-port-m1`
-**Last completed:** **T20** (M1 tool handlers + SlotView) — **checkpoint reached**
-**Last commit:** `14d6ad0` `feat(mcp): wire M1 tool handlers into dispatcher`
-**Total commits on branch:** 28 (1 plan + 1 status doc + 26 implementation)
+**Last completed:** **T21** (Compat harness — built, dry-run produced real diffs)
+**Last commit:** `1f20d55` `feat(compat): add Python v3 / Go v4 diff harness`
 **Binary builds and boots:** `WORKSPACE_ROOTS=$(pwd) ./bin/token-savior < /dev/null` exits on EOF after emitting `[token-savior] profile= version=… commit=… roots=1`
 
 ## Task progress (24 total)
@@ -31,7 +30,8 @@
 | T17 | Session stats counters | ✅ | `58833b2` |
 | T18 | MCP ToolContext + Dispatcher | ✅ | `ea0d53d` |
 | T19 | MCP stdio server + `cmd/token-savior/main.go` | ✅ | `b157d59` |
-| T20 | M1 tool handlers + SlotView adapter | ✅ | `14d6ad0` — **checkpoint reached** |
+| T20 | M1 tool handlers + SlotView adapter | ✅ | `14d6ad0` |
+| T21 | Compat harness | ✅ | `1f20d55` — **checkpoint reached** (live diffs surfaced 2 compat-deltas, see notes #15–#16) |
 | T21 | Compat harness | ⏳ pending — **checkpoint** | |
 | T22 | Baseline capture + manifest sizing | ⏳ pending | |
 | T23 | GitHub Actions CI (Go) | ⏳ pending — **checkpoint** | |
@@ -82,6 +82,9 @@
 12. **mark3labs API drift** — plan referenced `mcp.WithInputSchemaRaw` but the v0.54.0 export is `mcp.WithRawInputSchema`. T19 already adapted. Worth pre-checking other library symbols (`NewToolResultError`, `NewToolResultText`, `CallToolRequest.Params.Arguments`) if they appear in future tasks; all three were valid in v0.54.0 at T19 time.
 13. **`make build-token-savior` target name** — plan mentions this in T20 step 6 but the Makefile target is just `make build`. Binary lands at `./bin/token-savior`. Plan's command was wrong; T20 implementer adapted. Worth verifying any plan-doc `make` invocations against the actual Makefile.
 14. **Plan's silent-discard unmarshal pattern** for optional-args handlers (`_ = json.Unmarshal(raw, &args)`) trips `errcheck` lint. T20 wrapped it in `if len(raw) > 0 { if err := …; err != nil { return nil, err } }`. Net effect: malformed JSON now errors rather than being silently treated as missing — strictly correct.
+15. **T21 compat-delta — Python compact-text format.** The harness assumes both servers emit raw JSON in the MCP text-content field. Reality: Python's `token-savior` returns a token-saving compact format that starts with `@` (or `E` for the empty-result marker). 5 of 6 M1 tools fail `DiffJSON` on `"unmarshal want: invalid character '@' looking for beginning of value"`. **For T24** the options are: (a) teach `ts-compat` to decode Python's compact format before diffing, (b) add a `TS_RAW_JSON=1` server knob to v3 (violates "don't touch Python"), or (c) ship `internal/compat/expected_diffs.go` with these mismatches whitelisted. Lean: (a) — the format reader is mechanical and the harness already owns the comparison shape. Reproducer: `~/.venvs/token-savior/bin/token-savior` against `testdata/fixtures/go-small/`.
+16. **T21 compat-delta — `search_codebase` field rename.** Python emits `{content, file, line_number}` per hit; Go emits `{file, line, text}`. Same data, different field names. **Decision needed:** rename Go fields to `{content, file, line_number}` to match Python (1-line change in `internal/query/search.go::SearchHit`), or whitelist as a tolerated rename in `expected_diffs.go`. The Go names are arguably better (`line` is consistent with the rest of the query result types, `text` is shorter than `content`), so the call is whether to optimise for Python-parity or for Go-internal consistency. Same answer probably applies to other field-rename diffs that'll surface once #15 is unblocked.
+17. **Python venv setup for the harness.** `/opt/homebrew/bin/python3 -m venv ~/.venvs/token-savior && ~/.venvs/token-savior/bin/pip install -e ".[mcp]"` produces a working v3 install. Run the harness with `./bin/ts-compat -fixture "$(pwd)/testdata/fixtures/go-small" -python ~/.venvs/token-savior/bin/token-savior`. CI will need its own pip-install step (T23).
 
 ## Operational notes (lessons from T1–T7)
 
