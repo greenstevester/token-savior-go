@@ -3,9 +3,10 @@
 > Companion to `2026-05-14-go-port-m1.md`. Captures progress + carry-forwards as the plan is executed across multiple sessions.
 
 **Branch:** `feat/go-port-m1`
-**Last completed:** **T11** (Slot + Manager + ParseWorkspaceRoots) — **first checkpoint**
-**Last commit:** `ec6eb02` `feat(slot): per-project slot lifecycle and manager`
-**Total commits on branch:** 19 (1 plan + 1 status doc + 17 implementation)
+**Last completed:** **T20** (M1 tool handlers + SlotView) — **checkpoint reached**
+**Last commit:** `14d6ad0` `feat(mcp): wire M1 tool handlers into dispatcher`
+**Total commits on branch:** 28 (1 plan + 1 status doc + 26 implementation)
+**Binary builds and boots:** `WORKSPACE_ROOTS=$(pwd) ./bin/token-savior < /dev/null` exits on EOF after emitting `[token-savior] profile= version=… commit=… roots=1`
 
 ## Task progress (24 total)
 
@@ -21,22 +22,30 @@
 | T8 | Project walker | ✅ | `b15cc84` |
 | T9 | ProjectIndexer with worker pool | ✅ | `61ae3c6` |
 | T10 | Symbol-body hashing | ✅ | `95c92b2` |
-| T11 | Slot + SlotManager + ParseWorkspaceRoots | ✅ | `ec6eb02` — **checkpoint reached** |
-| T12 | Query — FindSymbol | ⏳ pending | |
-| T13 | Query — GetFunctions / GetClasses / GetImports | ⏳ pending | |
-| T14 | Query — SearchCodebase | ⏳ pending | |
-| T15 | Tool registry + ProfileSet + 8 M1 schemas | ⏳ pending | |
-| T16 | Profile parsing + visibility filter | ⏳ pending | |
-| T17 | Session stats counters | ⏳ pending | |
-| T18 | MCP ToolContext + Dispatcher | ⏳ pending | |
-| T19 | MCP stdio server + `cmd/token-savior/main.go` | ⏳ pending | |
-| T20 | M1 tool handlers + SlotView adapter | ⏳ pending — **checkpoint** | |
+| T11 | Slot + SlotManager + ParseWorkspaceRoots | ✅ | `ec6eb02` |
+| T12 | Query — FindSymbol | ✅ | `bc646e3` |
+| T13 | Query — GetFunctions / GetClasses / GetImports | ✅ | `1846003` |
+| T14 | Query — SearchCodebase | ✅ | `156110b` |
+| T15 | Tool registry + ProfileSet + 8 M1 schemas | ✅ | `2cc783f` |
+| T16 | Profile parsing + visibility filter | ✅ | `d7d09a1` |
+| T17 | Session stats counters | ✅ | `58833b2` |
+| T18 | MCP ToolContext + Dispatcher | ✅ | `ea0d53d` |
+| T19 | MCP stdio server + `cmd/token-savior/main.go` | ✅ | `b157d59` |
+| T20 | M1 tool handlers + SlotView adapter | ✅ | `14d6ad0` — **checkpoint reached** |
 | T21 | Compat harness | ⏳ pending — **checkpoint** | |
 | T22 | Baseline capture + manifest sizing | ⏳ pending | |
 | T23 | GitHub Actions CI (Go) | ⏳ pending — **checkpoint** | |
 | T24 | Update README + CLAUDE.md | ⏳ pending — **final checkpoint** | |
 
 **User-requested checkpoints (stop for review):** T1 ✅, T7 ✅, T11, T20, T21, T23, T24.
+
+## What the M1 server does end-to-end (after T20)
+
+- `cmd/token-savior` parses `WORKSPACE_ROOTS` (comma-separated) or legacy `PROJECT_ROOT`, indexes each root via `slot.Manager.RegisterRoot`, builds a `mcp.ToolContext{SlotManager, Stats}`, wires 8 handlers via `mcp.RegisterHandlers(dispatcher)`, advertises via `mcp.Serve` filtered by `tools.ParseProfile(os.Getenv("TOKEN_SAVIOR_PROFILE"))`, then runs `server.ServeStdio`.
+- Tool handlers (`internal/mcp/handlers.go`): `find_symbol`, `get_functions`, `get_classes`, `get_imports`, `search_codebase`, `switch_project`, `list_workspace_roots`, `get_stats`. Each delegates to `internal/query`; `query.SlotView{Root, Index}` is the adapter that keeps `internal/mcp` from importing `internal/slot`'s concrete type.
+- Optional-args handlers (`get_functions/classes/imports`) use a `len(raw)>0` guard then propagate unmarshal errors — strictly correct vs. the plan's silent-discard pattern (errcheck lint required the change).
+- Stats: every dispatch increments `ToolCalls[name]` and `TotalChars` regardless of handler outcome. `get_stats` returns the snapshot.
+- mark3labs/mcp-go API note: plan referenced `mcp.WithInputSchemaRaw`; actual export at v0.54.0 is `mcp.WithRawInputSchema(json.RawMessage)`.
 
 ## What the indexer/slot layer does (after T11)
 
@@ -69,6 +78,10 @@
 8. **`VERSION=v1.2.3 make build` env override** no longer works after the `:=` change in T1. Restore via `?=` + a separate `BUILD_TIME := …` if a release flow needs it (probably alongside T23 goreleaser setup).
 9. **Plan-bug audit** — two were caught during T1–T7 (T3 missing `.jsx`, T4 missing generic-receiver cases). T9 had a "broken-then-corrected" `init()` block in the plan text that the controller collapsed in the dispatch prompt (kept only the corrected version, dropped the `imports()` stub). Worth continuing the audit before each subsequent dispatch.
 10. **gosec 0o644 noise** — the plan uses `0o644` for test-file writes; gosec G306 flags it. Pattern across T8/T9/T11 is to tighten to `0o600` (or `0o750` for dirs) in the dispatch prompt. Pre-existing test fixtures still use `0o644` — leave them alone unless we touch the file for another reason.
+11. **`bytes` shadow noise** — plan test code repeatedly uses `bytes, _ := json.Marshal(...)` as a local var, which shadows the stdlib `bytes` package. Always rename to `raw` (or similar) in dispatch prompts. Hit at T17 and T20.
+12. **mark3labs API drift** — plan referenced `mcp.WithInputSchemaRaw` but the v0.54.0 export is `mcp.WithRawInputSchema`. T19 already adapted. Worth pre-checking other library symbols (`NewToolResultError`, `NewToolResultText`, `CallToolRequest.Params.Arguments`) if they appear in future tasks; all three were valid in v0.54.0 at T19 time.
+13. **`make build-token-savior` target name** — plan mentions this in T20 step 6 but the Makefile target is just `make build`. Binary lands at `./bin/token-savior`. Plan's command was wrong; T20 implementer adapted. Worth verifying any plan-doc `make` invocations against the actual Makefile.
+14. **Plan's silent-discard unmarshal pattern** for optional-args handlers (`_ = json.Unmarshal(raw, &args)`) trips `errcheck` lint. T20 wrapped it in `if len(raw) > 0 { if err := …; err != nil { return nil, err } }`. Net effect: malformed JSON now errors rather than being silently treated as missing — strictly correct.
 
 ## Operational notes (lessons from T1–T7)
 
