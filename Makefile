@@ -1,4 +1,4 @@
-.PHONY: build build-token-savior build-ts-compat build-all build-linux clean test test-compat lint help
+.PHONY: build build-token-savior build-ts-compat build-ts-cli build-all build-linux clean test test-compat lint help
 
 VERSION    := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT     := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -13,7 +13,10 @@ build-token-savior:
 build-ts-compat:
 	go build $(LDFLAGS) -o bin/ts-compat ./cmd/ts-compat
 
-build-all: build-token-savior build-ts-compat
+build-ts-cli:
+	go build $(LDFLAGS) -o bin/ts-cli ./cmd/ts-cli
+
+build-all: build-token-savior build-ts-compat build-ts-cli
 
 build-linux:
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o bin/token-savior-linux-amd64 ./cmd/token-savior
@@ -42,7 +45,8 @@ lint:
 help:
 	@echo "Targets:"
 	@echo "  build          - Build token-savior"
-	@echo "  build-all      - Build token-savior + ts-compat"
+	@echo "  build-ts-cli   - Build ts-cli manifest helper"
+	@echo "  build-all      - Build token-savior + ts-compat + ts-cli"
 	@echo "  build-linux    - Static Linux amd64/arm64 builds"
 	@echo "  test           - Run unit tests"
 	@echo "  test-compat    - Run compat harness against Python v3"
