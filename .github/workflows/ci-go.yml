@@ -49,10 +49,6 @@ jobs:
   compat-harness:
     name: Compat harness (vs Python v3)
     runs-on: ubuntu-latest
-    # Non-blocking until T24 closes parity (Python compact-text format
-    # currently fails 5/6 tools — see status doc notes #15-16). Job still
-    # runs so we keep visibility on the diff output.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -88,8 +84,7 @@ jobs:
   build:
     name: Build (Linux)
     runs-on: ubuntu-latest
-    # Don't gate on compat-harness — it's non-blocking until T24.
-    needs: [test, lint]
+    needs: [test, lint, compat-harness]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
