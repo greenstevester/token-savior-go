@@ -1,0 +1,107 @@
+name: CI (Go)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  GO_VERSION: '1.26'
+
+jobs:
+  test:
+    name: Test (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Verify deps
+        run: go mod verify
+      - name: Build
+        run: go build ./...
+      - name: Test
+        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Upload coverage
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./coverage.out
+          flags: go
+        continue-on-error: true
+
+  lint:
+    name: Lint (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+          args: --timeout=5m
+
+  compat-harness:
+    name: Compat harness (vs Python v3)
+    runs-on: ubuntu-latest
+    # Non-blocking until T24 closes parity (Python compact-text format
+    # currently fails 5/6 tools — see status doc notes #15-16). Job still
+    # runs so we keep visibility on the diff output.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Python token-savior
+        run: pip install -e ".[mcp]"
+      - name: Build Go binaries
+        run: make build-all
+      - name: Run compat harness
+        env:
+          TOKEN_SAVIOR_WATCHER: "off"
+        run: ./bin/ts-compat -fixture "$PWD/testdata/fixtures/go-small" -python token-savior
+
+  security:
+    name: Security scan (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: gosec
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          gosec -no-fail -fmt text ./...
+
+  build:
+    name: Build (Linux)
+    runs-on: ubuntu-latest
+    # Don't gate on compat-harness — it's non-blocking until T24.
+    needs: [test, lint]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Build static Linux binaries
+        run: |
+          mkdir -p build
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o build/token-savior-linux-amd64 ./cmd/token-savior
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o build/token-savior-linux-arm64 ./cmd/token-savior
+      - uses: actions/upload-artifact@v4
+        with:
+          name: token-savior-binaries
+          path: build/
