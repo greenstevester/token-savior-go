@@ -3,8 +3,8 @@
 > Companion to `2026-05-14-go-port-m1.md`. Captures progress + carry-forwards as the plan is executed across multiple sessions.
 
 **Branch:** `feat/go-port-m1`
-**Last completed:** **T21** (Compat harness — built, dry-run produced real diffs)
-**Last commit:** `1f20d55` `feat(compat): add Python v3 / Go v4 diff harness`
+**Last completed:** **T23** (GitHub Actions CI for Go) — **checkpoint reached**
+**Last commit:** `95d32ad` `ci(go): add Go CI workflow alongside existing Python CI`
 **Binary builds and boots:** `WORKSPACE_ROOTS=$(pwd) ./bin/token-savior < /dev/null` exits on EOF after emitting `[token-savior] profile= version=… commit=… roots=1`
 
 ## Task progress (24 total)
@@ -31,13 +31,18 @@
 | T18 | MCP ToolContext + Dispatcher | ✅ | `ea0d53d` |
 | T19 | MCP stdio server + `cmd/token-savior/main.go` | ✅ | `b157d59` |
 | T20 | M1 tool handlers + SlotView adapter | ✅ | `14d6ad0` |
-| T21 | Compat harness | ✅ | `1f20d55` — **checkpoint reached** (live diffs surfaced 2 compat-deltas, see notes #15–#16) |
-| T21 | Compat harness | ⏳ pending — **checkpoint** | |
-| T22 | Baseline capture + manifest sizing | ⏳ pending | |
-| T23 | GitHub Actions CI (Go) | ⏳ pending — **checkpoint** | |
+| T21 | Compat harness | ✅ | `1f20d55` (live diffs surfaced 2 compat-deltas, see notes #15–#16) |
+| T22 | Baseline capture + manifest sizing | ✅ | `b5ed12b` (manifest: Go 1815 B vs Python 33272 B for full profile — gate met 18×) |
+| T23 | GitHub Actions CI (Go) | ✅ | `95d32ad` — **checkpoint reached** (compat-harness non-blocking until T24) |
 | T24 | Update README + CLAUDE.md | ⏳ pending — **final checkpoint** | |
 
 **User-requested checkpoints (stop for review):** T1 ✅, T7 ✅, T11, T20, T21, T23, T24.
+
+## What landed at T22-T23
+
+- `cmd/ts-cli manifest` (build via `make build-ts-cli`) — per-profile byte counts (`tool_count`, `name_bytes`, `desc_bytes`, `schema_bytes`, `total_bytes`). M1 baseline: every profile shows 8 tools / 1815 bytes total (all tagged `AllProfiles`).
+- `scripts/capture-baselines.sh` — records Python v3 cold-boot latency + harness parity status to `testdata/baselines/python-v3-<date>.json`. Honours `TS_PYTHON_BIN` env var (defaults to `token-savior` on PATH). Captured 2026-05-16: `cold_index_ms=270`, `tools_parity=false`.
+- `.github/workflows/ci-go.yml` — five jobs: `test` (race + coverage), `lint` (golangci-lint), `compat-harness` (non-blocking until T24), `security` (gosec, no-fail), `build` (linux amd64/arm64 static binaries as artefacts). `build` gates on `test+lint` only (not compat-harness). Existing Python `ci.yml` untouched.
 
 ## What the M1 server does end-to-end (after T20)
 
