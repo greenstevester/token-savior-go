@@ -56,6 +56,12 @@ func main() {
 
 	failures := 0
 	for _, tc := range tools {
+		exp := compat.ToolExpectations[tc.Name]
+		if exp.Skip {
+			fmt.Printf("SKIP %s — %s\n", tc.Name, exp.Reason)
+			continue
+		}
+
 		pyOut, err := callTool(*pythonBin, *fixture, tc.Name, tc.Args)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[python %s] %v\n", tc.Name, err)
@@ -68,7 +74,18 @@ func main() {
 			failures++
 			continue
 		}
-		diffs, err := compat.DiffJSON(pyOut, goOut)
+
+		wantOut, gotOut := pyOut, goOut
+		if exp.Normalize != nil {
+			wantOut, gotOut, err = exp.Normalize(pyOut, goOut)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[normalize %s] %v\n", tc.Name, err)
+				failures++
+				continue
+			}
+		}
+
+		diffs, err := compat.DiffJSON(wantOut, gotOut)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[diff %s] %v\n", tc.Name, err)
 			failures++
