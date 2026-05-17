@@ -1,0 +1,47 @@
+version: "2"
+
+run:
+  go: '1.26'
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gosec
+    - prealloc
+    - unconvert
+    - unparam
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+    govet:
+      enable:
+        - shadow
+  exclusions:
+    presets:
+      - std-error-handling
+    rules:
+      - text: "Error return value of .((os\\.)?std(out|err)\\..*|.*Close|.*Flush). is not checked"
+        linters:
+          - errcheck
+      - text: "shadow: declaration of \"err\" shadows"
+        linters:
+          - govet
+      - text: "G104"
+        linters:
+          - gosec
+      - path: ".*_test\\.go"
+        linters:
+          - unused
+      - path: ".*_test\\.go"
+        text: "G304"
+        linters:
+          - gosec

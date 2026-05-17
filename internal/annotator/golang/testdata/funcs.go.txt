@@ -1,0 +1,27 @@
+package example
+
+import "context"
+
+// Top-level function.
+func DoThing(ctx context.Context, n int) error {
+	return nil
+}
+
+// Another top-level function.
+func helper() string {
+	return "hi"
+}
+
+type Thing struct {
+	name string
+}
+
+// Pointer-receiver method.
+func (t *Thing) Name() string {
+	return t.name
+}
+
+// Value-receiver method.
+func (t Thing) Rename(n string) {
+	t.name = n
+}

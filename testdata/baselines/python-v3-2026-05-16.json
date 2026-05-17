@@ -1,0 +1,8 @@
+{
+  "captured_at": "2026-05-16T16:26:14Z",
+  "fixture": "go-small",
+  "python_version": "3.9.6",
+  "python_bin": "/Users/stevengreensill/.venvs/token-savior/bin/token-savior",
+  "cold_index_ms": 270,
+  "tools_parity": false
+}

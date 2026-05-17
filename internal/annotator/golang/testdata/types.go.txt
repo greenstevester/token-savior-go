@@ -1,0 +1,18 @@
+package example
+
+// A struct type.
+type Thing struct {
+	Name string
+	Age  int
+}
+
+// An interface type.
+type Greeter interface {
+	Greet() string
+}
+
+// A type alias.
+type StringList = []string
+
+// A defined type (not an alias).
+type Counter int
