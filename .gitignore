@@ -79,3 +79,7 @@ bin/
 coverage.out
 *.test
 *.out
+# Stray top-level binaries from `go build ./cmd/<name>` (real builds use bin/)
+/token-savior
+/ts-compat
+/ts-cli

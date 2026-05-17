@@ -1,0 +1,11 @@
+package typesonly
+
+type Foo struct {
+	Name string
+}
+
+type Bar interface {
+	Do() error
+}
+
+type Baz = int

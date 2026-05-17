@@ -137,3 +137,40 @@ func TestAnnotate_Calls(t *testing.T) {
 	require.Contains(t, got["helper"], "fmt.Sprintf")
 	require.NotContains(t, got, "another") // empty body -> no entry
 }
+
+func TestAnnotate_EmptyFile(t *testing.T) {
+	src := loadFixture(t, "empty.go.txt")
+	md, err := New().Annotate("empty.go", src)
+	require.NoError(t, err)
+	require.Equal(t, "go", md.Language)
+	require.Equal(t, "empty.go", md.Path)
+	require.Empty(t, md.Functions)
+	require.Empty(t, md.Classes)
+	require.Empty(t, md.Imports)
+	require.Empty(t, md.Calls)
+}
+
+func TestAnnotate_ParseError(t *testing.T) {
+	src := loadFixture(t, "parse_error.go.txt")
+	md, err := New().Annotate("parse_error.go", src)
+	require.Error(t, err)
+	require.Nil(t, md)
+}
+
+func TestAnnotate_TypesOnlyFile(t *testing.T) {
+	src := loadFixture(t, "types_only.go.txt")
+	md, err := New().Annotate("types_only.go", src)
+	require.NoError(t, err)
+	require.Empty(t, md.Functions)
+	require.Empty(t, md.Imports)
+	require.Empty(t, md.Calls)
+
+	require.Len(t, md.Classes, 3)
+	byQualified := map[string]models.Class{}
+	for _, c := range md.Classes {
+		byQualified[c.Qualified] = c
+	}
+	require.Equal(t, "struct", byQualified["Foo"].Kind)
+	require.Equal(t, "interface", byQualified["Bar"].Kind)
+	require.Equal(t, "alias", byQualified["Baz"].Kind)
+}
