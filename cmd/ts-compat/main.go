@@ -46,10 +46,10 @@ func main() {
 	}
 
 	tools := []toolCase{
-		{Name: "find_symbol", Args: map[string]any{"name": "Greeter.Hello"}},
-		{Name: "get_functions", Args: map[string]any{}},
-		{Name: "get_classes", Args: map[string]any{}},
-		{Name: "get_imports", Args: map[string]any{}},
+		{Name: "find_symbol", Args: map[string]any{"name": "Greeter.Hello", "compress": false}},
+		{Name: "get_functions", Args: map[string]any{"compress": false}},
+		{Name: "get_classes", Args: map[string]any{"compress": false}},
+		{Name: "get_imports", Args: map[string]any{"compress": false}},
 		{Name: "search_codebase", Args: map[string]any{"pattern": "Greeter", "regex": false}},
 		{Name: "list_workspace_roots", Args: map[string]any{}},
 	}
@@ -108,7 +108,7 @@ func callTool(bin, root, tool string, args map[string]any) (json.RawMessage, err
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, bin) //nolint:gosec // bin is user-supplied via flag; harness is a dev tool, not a service.
-	cmd.Env = append(os.Environ(), "WORKSPACE_ROOTS="+root, "TOKEN_SAVIOR_PROFILE=full")
+	cmd.Env = append(os.Environ(), "WORKSPACE_ROOTS="+root, "TOKEN_SAVIOR_PROFILE=full", "TS_NO_HINTS=1")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
