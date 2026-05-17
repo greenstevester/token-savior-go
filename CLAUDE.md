@@ -4,12 +4,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Orientation
 
-- The directory is named `token-savior-go` but the project is **Python** — package
-  `token_savior` (PyPI: `token-savior-recall`). There is no Go code here; the suffix
-  is historical.
-- This is an MCP server. The wire entry point is `token-savior` (console script in
-  `pyproject.toml` → `token_savior.server:main_sync`).
-- The optional web viewer entry point is `token-savior-dashboard`.
+- The directory is named `token-savior-go` because a Go port (v4) is now in
+  progress alongside the shipping Python v3. Python v3 still owns `src/`,
+  package `token_savior` (PyPI: `token-savior-recall`); Go v4 lives in
+  `cmd/` and `internal/`.
+- This is an MCP server. The Python wire entry point is `token-savior`
+  (console script in `pyproject.toml` → `token_savior.server:main_sync`).
+  The Go binary builds via `make build` to `./bin/token-savior`.
+- The optional web viewer entry point is `token-savior-dashboard` (Python).
+
+## Go port (in progress, M1)
+
+A pure-Go rewrite lives alongside the Python source under `cmd/` + `internal/`.
+M1 ships 8 tools (`find_symbol`, `get_functions`, `get_classes`, `get_imports`,
+`search_codebase`, `switch_project`, `list_workspace_roots`, `get_stats`) with
+the Go annotator only. Build with `make build-all`; test with `make test`;
+run the compat harness against Python v3 with `make test-compat`. Spec and
+plan: `docs/superpowers/specs/` and `docs/superpowers/plans/`.
 
 ## Common commands
 

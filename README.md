@@ -20,6 +20,14 @@
 **📖 [mibayy.github.io/token-savior](https://mibayy.github.io/token-savior/)** — project site + benchmark landing
 **🧪 [github.com/Mibayy/tsbench](https://github.com/Mibayy/tsbench)** — benchmark source + fixtures
 
+> **v4 Go port in progress.** This README describes the Python v3 release on
+> PyPI. The Go reimplementation lives in `cmd/` and `internal/` of this repo
+> and is being built milestone-by-milestone; see
+> [docs/superpowers/specs/2026-05-14-port-to-go-design.md](docs/superpowers/specs/2026-05-14-port-to-go-design.md)
+> for the design and
+> [docs/superpowers/plans/2026-05-14-go-port-m1.md](docs/superpowers/plans/2026-05-14-go-port-m1.md)
+> for M1's implementation plan.
+
 ---
 
 ### Benchmark — 96 real coding tasks (tiny+v2 default)
